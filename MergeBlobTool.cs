@@ -1,4 +1,4 @@
-﻿using Emgu.CV;
+using Emgu.CV;
 using Emgu.CV.Cvb;
 using sun.nio.fs;
 using System;
@@ -15,7 +15,7 @@ namespace TCV_ToolBlob
 {
     internal class MergeBlobTool
     {
-        private int offsetX =100;
+        private int offsetX = 100;
         private int offsetY = 100;
         private TRectAngle realRegion;
         public List<Rectangle> ListBoundingBox;
@@ -24,16 +24,21 @@ namespace TCV_ToolBlob
         public List<PointF> ListCentroid;
         public List<PointF> ListCentroid_Real;
         public List<UserCvBlob> ListBlobInfor;
-        public MergeBlobTool(int offsetX, int offsetY, TRectAngle realRegion)
+        public ToolBlobParam.enReturnPoint enReturnPoint;
+        public int nCountFilter;
+        public bool nReturnBigBlobPoint;
+        public MergeBlobTool(int offsetX, int offsetY, TRectAngle realRegion, ToolBlobParam.enReturnPoint enReturnPoint, int nCountFilter, bool nReturnBigBlobPoint)
         {
             this.offsetX = offsetX;
             this.offsetY = offsetY;
             this.realRegion = realRegion;
+            this.enReturnPoint = enReturnPoint;
+            this.nCountFilter = nCountFilter;
+            this.nReturnBigBlobPoint = nReturnBigBlobPoint;
         }
         public ToolBlobResult resultMergeBlob(ToolBlobResult blobResult)
         {
             //Initialize
-            realRegion = new TRectAngle();
             ListBoundingBox = new List<Rectangle>();
             ListBoundingBox_Real = new List<Rectangle>();
             ListArea = new List<int>();
@@ -44,18 +49,51 @@ namespace TCV_ToolBlob
 
             // Completely Merged ListBlob in MergedBlobResult.ListBlobInfor
             ToolBlobResult MergedBlobResult = (ToolBlobResult)blobResult.Clone();
-            MergedBlobResult.ListBlobInfor = MergeOverlappingBlobs(blobResult.ListBlobInfor);
-
+            MergedBlobResult.ListBlobInfor = MergeOverlappingBlobs(blobResult.ListBlobInfor).OrderByDescending(x => x.Area).ToList();
 
             //Fill Other Informations using ListBlobInfor
-            for (int i = 0; i < MergedBlobResult.ListBlobInfor.Count; i++)
+            for (int i = 0; i < nCountFilter; i++)
             {
+                // 합쳐진 블랍의 개수가 카운트보다 작을 때
+                if (i >= MergedBlobResult.ListBlobInfor.Count)
+                    break;
                 ListBoundingBox.Add(MergedBlobResult.ListBlobInfor[i].BoundingBox);
-                TRectAngle rect_real = new TRectAngle(ListBlobInfor[i].BoundingBox.X + realRegion.StartX, ListBlobInfor[i].BoundingBox.Y + realRegion.StartY, ListBlobInfor[i].BoundingBox.Width, ListBlobInfor[i].BoundingBox.Height);
+                TRectAngle rect_real = new TRectAngle(MergedBlobResult.ListBlobInfor[i].BoundingBox.X + realRegion.StartX, MergedBlobResult.ListBlobInfor[i].BoundingBox.Y + realRegion.StartY, MergedBlobResult.ListBlobInfor[i].BoundingBox.Width, MergedBlobResult.ListBlobInfor[i].BoundingBox.Height);
                 ListBoundingBox_Real.Add(rect_real.GetSystemRectangle());
                 ListArea.Add(MergedBlobResult.ListBlobInfor[i].Area);
-                ListCentroid.Add(MergedBlobResult.ListBlobInfor[i].Centroid);
-                ListCentroid_Real.Add(new PointF((float)realRegion.StartX + (float)(ListBlobInfor[i].BlobMoments.M10 / ListBlobInfor[i].BlobMoments.M00), (float)realRegion.StartY + (float)(ListBlobInfor[i].BlobMoments.M01 / ListBlobInfor[i].BlobMoments.M00)));
+                switch (enReturnPoint)
+                {
+                    //완성되면 위로 빼서 정리하는걸로
+                    case ToolBlobParam.enReturnPoint.CENTER:
+                        if(nReturnBigBlobPoint == true)
+                        {
+                            ListCentroid.Add(MergedBlobResult.ListBlobInfor[i].Centroid);
+                            ListCentroid_Real.Add(new PointF((float)realRegion.StartX + (float)(MergedBlobResult.ListBlobInfor[i].BlobMoments.M10 / MergedBlobResult.ListBlobInfor[i].BlobMoments.M00), (float)realRegion.StartY + (float)(MergedBlobResult.ListBlobInfor[i].BlobMoments.M01 / MergedBlobResult.ListBlobInfor[i].BlobMoments.M00)));
+                        }
+                        else
+                        {
+                            ListCentroid.Add(new PointF(MergedBlobResult.ListBlobInfor[i].BoundingBox.X + MergedBlobResult.ListBlobInfor[i].BoundingBox.Width / 2, MergedBlobResult.ListBlobInfor[i].BoundingBox.Y + MergedBlobResult.ListBlobInfor[i].BoundingBox.Height / 2));
+                            ListCentroid_Real.Add(new PointF((float)realRegion.StartX + MergedBlobResult.ListBlobInfor[i].BoundingBox.X + MergedBlobResult.ListBlobInfor[i].BoundingBox.Width / 2, (float)realRegion.StartY + MergedBlobResult.ListBlobInfor[i].BoundingBox.Y + MergedBlobResult.ListBlobInfor[i].BoundingBox.Height / 2));
+                        }
+                        break;
+                    case ToolBlobParam.enReturnPoint.LT:
+                        ListCentroid.Add(new PointF(MergedBlobResult.ListBlobInfor[i].BoundingBox.X, MergedBlobResult.ListBlobInfor[i].BoundingBox.Y));
+                        ListCentroid_Real.Add(new PointF((float)realRegion.StartX + MergedBlobResult.ListBlobInfor[i].BoundingBox.X, (float)realRegion.StartY + MergedBlobResult.ListBlobInfor[i].BoundingBox.Y));
+                        break;
+                    case ToolBlobParam.enReturnPoint.RT:
+                        ListCentroid.Add(new PointF(MergedBlobResult.ListBlobInfor[i].BoundingBox.X + MergedBlobResult.ListBlobInfor[i].BoundingBox.Width, MergedBlobResult.ListBlobInfor[i].BoundingBox.Y));
+                        ListCentroid_Real.Add(new PointF((float)realRegion.StartX + MergedBlobResult.ListBlobInfor[i].BoundingBox.X + MergedBlobResult.ListBlobInfor[i].BoundingBox.Width, (float)realRegion.StartY + MergedBlobResult.ListBlobInfor[i].BoundingBox.Y));
+                        break;
+                    case ToolBlobParam.enReturnPoint.LB:
+                        ListCentroid.Add(new PointF(MergedBlobResult.ListBlobInfor[i].BoundingBox.X, MergedBlobResult.ListBlobInfor[i].BoundingBox.Y + MergedBlobResult.ListBlobInfor[i].BoundingBox.Height));
+                        ListCentroid_Real.Add(new PointF((float)realRegion.StartX + MergedBlobResult.ListBlobInfor[i].BoundingBox.X, (float)realRegion.StartY + MergedBlobResult.ListBlobInfor[i].BoundingBox.Y + MergedBlobResult.ListBlobInfor[i].BoundingBox.Height));
+                        break;
+                    case ToolBlobParam.enReturnPoint.RB:
+                        ListCentroid.Add(new PointF(MergedBlobResult.ListBlobInfor[i].BoundingBox.X + MergedBlobResult.ListBlobInfor[i].BoundingBox.Width, MergedBlobResult.ListBlobInfor[i].BoundingBox.Y + MergedBlobResult.ListBlobInfor[i].BoundingBox.Height));
+                        ListCentroid_Real.Add(new PointF((float)realRegion.StartX + MergedBlobResult.ListBlobInfor[i].BoundingBox.X + MergedBlobResult.ListBlobInfor[i].BoundingBox.Width, (float)realRegion.StartY + MergedBlobResult.ListBlobInfor[i].BoundingBox.Y + MergedBlobResult.ListBlobInfor[i].BoundingBox.Height));
+                        break;
+                }
+                
                 ListBlobInfor.Add(MergedBlobResult.ListBlobInfor[i]);
             }
 
@@ -84,8 +122,7 @@ namespace TCV_ToolBlob
             {
                 if (!visited.Contains(startBlob))
                 {
-                    List<UserCvBlob> connectedBlobs = DFS(startBlob, blobList, visited);
-
+                    List<UserCvBlob> connectedBlobs = BFS(startBlob, blobList, visited);
                     UserCvBlob mergedBlob = MergeBlobs(connectedBlobs);
                     mergedBlobs.Add(mergedBlob);
                 }
@@ -100,29 +137,36 @@ namespace TCV_ToolBlob
             }
             return mergedBlobs;
         }
-        private List<UserCvBlob> DFS(UserCvBlob startBlob, List<UserCvBlob> blobList, HashSet<UserCvBlob> visited)
+        //2023.12.11 BFS 알고리즘으로 변경 MCK
+        private List<UserCvBlob> BFS(UserCvBlob startBlob, List<UserCvBlob> blobList, HashSet<UserCvBlob> visited)
         {
             List<UserCvBlob> connectedBlobs = new List<UserCvBlob>();
-            Stack<UserCvBlob> stack = new Stack<UserCvBlob>();
+            Queue<UserCvBlob> Queue = new Queue<UserCvBlob>();
 
-            stack.Push(startBlob);
+            Queue.Enqueue(startBlob);
             visited.Add(startBlob);
 
-            while(stack.Count > 0)
-            {
-                UserCvBlob currentBlob = stack.Pop();
+            while(Queue.Count > 0)
+                {
+                UserCvBlob currentBlob = Queue.Dequeue();
                 connectedBlobs.Add(currentBlob);
 
                 foreach (var neighbor in blobList)
                 {
-                    if(!visited.Contains(neighbor) && currentBlob.BoundingBox.IntersectsWith(neighbor.BoundingBox))
+                    Rectangle expandCurrentRect = ExpandRectangle(currentBlob.BoundingBox, offsetX, offsetY);
+                    Rectangle expandNeighborRect = ExpandRectangle(neighbor.BoundingBox, offsetX, offsetY);
+                    if(!visited.Contains(neighbor) && expandCurrentRect.IntersectsWith(expandNeighborRect))
                         {
-                            stack.Push(neighbor);
+                            Queue.Enqueue(neighbor);
                             visited.Add(neighbor);
                         }
                 }
             }
             return connectedBlobs;
+        }
+        public Rectangle ExpandRectangle(Rectangle rect, int offsetX, int offsetY)
+        {
+            return new Rectangle(rect.X - offsetX, rect.Y - offsetY, rect.Width + 2 * offsetX, rect.Height + offsetY * 2);
         }
         public UserCvBlob MergeBlobs(List<UserCvBlob> userCvBlobs)
         {
